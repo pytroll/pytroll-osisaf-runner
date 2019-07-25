@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-# Copyright (c) 2014, 2015, 2016 Adam.Dybbroe
+# Copyright (c) 2014, 2015, 2016, 2019 Adam.Dybbroe
 
 # Author(s):
 
@@ -25,8 +25,17 @@
 import os
 import ConfigParser
 import shutil
-
+import sys
+from urlparse import urlparse
+import posttroll.subscriber
+from posttroll.publisher import Publish
+from mpop.utils import debug_on
+debug_on()
+from mpop.satellites import PolarFactory
+from datetime import timedelta, datetime
+import tempfile
 import logging
+
 LOG = logging.getLogger(__name__)
 
 CONFIG_PATH = os.environ.get('SSTRUNNER_CONFIG_DIR', './')
@@ -44,11 +53,11 @@ for option, value in CONF.items(MODE, raw=True):
 
 SST_OUTPUT_DIR = OPTIONS['sst_outdir']
 try:
-    SST_OLD_OUTPUT_DIR = OPTIONS['sst_old_outdir']
+    SST_DIANA_OUTPUT_DIR = OPTIONS['sst_diana_outdir']
     SST_SIR_DIR = OPTIONS['sir_dir']
     SST_SIR_LOCALDIR = OPTIONS['sir_local_dir']
 except KeyError:
-    SST_OLD_OUTPUT_DIR = None
+    SST_DIANA_OUTPUT_DIR = None
     SST_SIR_DIR = None
     SST_SIR_LOCALDIR = None
 
@@ -58,17 +67,6 @@ _DEFAULT_TIME_FORMAT = '%Y-%m-%d %H:%M:%S'
 
 #: Default log format
 _DEFAULT_LOG_FORMAT = '[%(levelname)s: %(asctime)s : %(name)s] %(message)s'
-
-
-import sys
-from urlparse import urlparse
-import posttroll.subscriber
-from posttroll.publisher import Publish
-
-from mpop.utils import debug_on
-debug_on()
-from mpop.satellites import PolarFactory
-from datetime import timedelta, datetime
 
 #METOPS = ['Metop-A', 'Metop-B', 'Metop-C']
 METOP_NAMES = ['metop02', 'metop01', 'metop03']
@@ -158,13 +156,6 @@ def start_sst_processing(sst_file, message, **kwargs):
     LOG.info("Sat and Instrument: " + platform_name + " " + instrument)
 
     areaid = 'euron1'
-    prfx = platform_name.lower() + start_time.strftime("_%Y%m%d_%H") + \
-        '_' + str(areaid)
-    outname = os.path.join(SST_OUTPUT_DIR, 'osisaf_sst_float_%s.tif' % prfx)
-    LOG.info("Output file name: " + str(outname))
-    if os.path.exists(outname):
-        LOG.warning("File " + str(outname) + " already there. Continue...")
-        return sst_file
 
     orbit = "00000"
     endtime = start_time + timedelta(seconds=60 * 12)
@@ -179,20 +170,19 @@ def start_sst_processing(sst_file, message, **kwargs):
     LOG.debug("Project data...")
     localdata = glbd.project(areaid)
     img = localdata.image.sst_float()
-    img.save(outname, floating_point=True)
-    LOG.debug("SST Tiff file stored on area %s", str(areaid))
 
-    # Store some other products for Diana and other users:
-    # We should rather use producer.py and the XML product list!
-    # FIXME!
-    # if SST_OLD_OUTPUT_DIR:
-    #     prfx = start_time.strftime("%Y%m%d%H%M")
-    #     outname = os.path.join(
-    #         SST_OLD_OUTPUT_DIR, 'noaa_osisaf_sstbaltic_%s.png' % prfx)
-    #     LOG.info("Output file name: " + str(outname))
-    #     img = localdata.image.sst_with_landseamask()
-    #     img.save(outname)
-    #     LOG.debug("SST PNG file stored on area %s", str(areaid))
+    prfx = platform_name.lower() + start_time.strftime("_%Y%m%d_%H") + \
+        '_' + str(areaid)
+
+    for outdir in [SST_OUTPUT_DIR, SST_DIANA_OUTPUT_DIR]:
+        if not outdir:
+            continue
+        outname = os.path.join(outdir, 'osisaf_sst_float_%s.tif' % prfx)
+        LOG.info("Output file name: " + str(outname))
+        tempfilename = tempfile.mktemp(dir=outdir)
+        img.save(tempfilename, floating_point=True)
+        shutil.move(tempfilename, outname)
+        LOG.debug("SST Tiff file stored on area %s to destination %s", str(areaid), outdir)
 
     if SST_SIR_LOCALDIR and SST_SIR_DIR:
         img = localdata.image.sst_with_landseamask()
@@ -206,15 +196,21 @@ def start_sst_processing(sst_file, message, **kwargs):
                                                                    start_time.strftime('%y%m%d%H%M')))
         shutil.copy(local_filename, sir_filename)
 
-    prfx = platform_name.lower() + start_time.strftime("_%Y%m%d_%H") + \
-        '_' + str(areaid)
-    outname = os.path.join(SST_OUTPUT_DIR, 'osisaf_sst_%s.tif' % prfx)
-    LOG.info("Output file name: " + str(outname))
     LOG.debug("Project data...")
     localdata = glbd.project(areaid)
     img = localdata.image.sst()
-    img.save(outname)
-    LOG.debug("SST Tiff file stored on area %s!", str(areaid))
+
+    prfx = platform_name.lower() + start_time.strftime("_%Y%m%d_%H") + \
+        '_' + str(areaid)
+    for outdir in [SST_OUTPUT_DIR, SST_DIANA_OUTPUT_DIR]:
+        if not outdir:
+            continue
+        outname = os.path.join(outdir, 'osisaf_sst_%s.tif' % prfx)
+        LOG.info("Output file name: " + str(outname))
+        tempfilename = tempfile.mktemp(dir=outdir)
+        img.save(tempfilename)
+        shutil.move(tempfilename, outname)
+        LOG.debug("SST Tiff file stored on area %s to destination %s", str(areaid), outdir)
 
     if SST_SIR_LOCALDIR and SST_SIR_DIR:
         areaid = 'baws'
