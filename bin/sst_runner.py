@@ -179,7 +179,7 @@ def start_sst_processing(sst_file, message, **kwargs):
             continue
         outname = os.path.join(outdir, 'osisaf_sst_float_%s.tif' % prfx)
         LOG.info("Output file name: " + str(outname))
-        tempfilename = tempfile.mktemp(dir=outdir)
+        tempfilename = tempfile.mktemp(suffix='.tif', dir=outdir)
         img.save(tempfilename, floating_point=True)
         shutil.move(tempfilename, outname)
         LOG.debug("SST Tiff file stored on area %s to destination %s", str(areaid), outdir)
@@ -207,7 +207,7 @@ def start_sst_processing(sst_file, message, **kwargs):
             continue
         outname = os.path.join(outdir, 'osisaf_sst_%s.tif' % prfx)
         LOG.info("Output file name: " + str(outname))
-        tempfilename = tempfile.mktemp(dir=outdir)
+        tempfilename = tempfile.mktemp(suffix='.tif', dir=outdir)
         img.save(tempfilename)
         shutil.move(tempfilename, outname)
         LOG.debug("SST Tiff file stored on area %s to destination %s", str(areaid), outdir)
